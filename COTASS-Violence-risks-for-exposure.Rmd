@@ -1,6 +1,6 @@
 ---
 title: "COTASS Interpersonal Violence Project - Risk Factors for Experiencing Interpersonal Violence"
-author: "Filip Kaleta"
+author: "Filip Marzecki"
 date: "2023-12-06"
 output: 
   html_document:
