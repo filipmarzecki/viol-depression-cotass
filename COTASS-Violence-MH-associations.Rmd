@@ -1,6 +1,6 @@
 ---
 title: "COTASS Interpersonal Violence Project - Mental Health and Interpersonal Violence Associations"
-author: "Filip Kaleta"
+author: "Filip Marzecki"
 date: "2023-12-06"
 output: 
   html_document:
