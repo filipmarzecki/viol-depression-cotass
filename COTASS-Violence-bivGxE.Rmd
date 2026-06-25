@@ -1,6 +1,6 @@
 ---
 title: "Bivariate GxE: Depression moderated by interpersonal violence  (COTASS)"
-author: "Filip Kaleta"
+author: "Filip Marzecki"
 date: "2024-02-20"
 output: 
   html_document:
