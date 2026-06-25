@@ -1,0 +1,477 @@
+---
+title: "COTASS Interpersonal Violence Project - Mental Health and Interpersonal Violence Associations"
+author: "Filip Kaleta"
+date: "2023-12-06"
+output: 
+  html_document:
+    toc: true
+---
+
+# Packages
+```{r include=FALSE}
+library(haven)
+library(psych)
+library(ggplot2)
+library(scales)
+library(stringr)
+library(dplyr)
+library(forcats)
+library(tidyverse)
+library(labelled)
+library(car)
+library(miceadds)
+library(texreg)
+library(sandwich)
+library(broom)
+library(knitr)
+library(foreign)
+
+```
+
+# Objects of Variables
+```{r include=FALSE}
+rm(list=ls())
+
+df <- read_dta("IPV-and-depression3.dta")
+
+df <- df[!(df$whichcotass == 1 | df$whichcotass == 2),]
+
+head(df)
+
+var_label(df$sex_c1c2)
+val_labels(df$sex_c1c2)
+
+var_label(df$c1_war1)
+val_labels(df$c1_war1)
+
+var_label(df$c1_war2)
+var_label(df$c1_war3)
+var_label(df$c1_war4)
+var_label(df$c1_war5)
+var_label(df$c1_war6)
+var_label(df$c1_war7)
+var_label(df$c1_war8)
+
+var_label(df$ethnicity)
+val_labels(df$ethnicity)
+
+var_label(df$ethn_minority)
+val_labels(df$ethn_minority)
+
+
+#demographic
+
+#To measure standard of living, questions were asked about housing conditions, ownership of household appliances and access to transport. For educational attainment, participants were asked to report their level on a 7-point scale (“no education” to “university or higher”). The question regarding financial strain, provided choices on a 5-point scale, ranging from “finding it very difficult to make ends meet” to “living comfortably”. 
+
+ 
+#To measure standard of living, questions were asked about housing conditions, ownership of household appliances and access to transport. Composite standard of living scores will be created for each participant by taking the sum of all the items. For a composite SES, a sum of standardised responses to each of the 3 scales (standard of living, educational attainment and financial strain).  
+
+
+sex <- df$sex_c1c2
+age <- df$age_yrs
+marstat <- df$marstat
+ethnicity <- df$ethnicity
+ethn_minority <- df$ethn_minority
+
+val_labels(df$tenure)
+tenure <- df$tenure
+table(tenure)
+
+val_labels(df$hq1_housetype)
+val_labels(df$hq2_roomsforsleep)
+val_labels(df$hq3_floorqual)
+val_labels(df$hq4_roofqual)
+val_labels(df$hq5_wallqual)
+val_labels(df$hq6_lighting)
+val_labels(df$hq7_cookfuel)
+val_labels(df$hq8_watersource)
+val_labels(df$hq9_toilet)
+
+housing1 <- df$hq1_housetype #0 = good, 1 = poor
+housing2 <- df$hq2_roomsforsleep #0 = good, 1 = poor
+housing3 <- df$hq3_floorqual #0 = good, 1 = poor
+housing4 <- df$hq4_roofqual #0 = good, 1 = poor
+housing5 <- df$hq5_wallqual #0 = good, 1 = poor
+housing6 <- df$hq6_lighting #0 = good, 1 = poor
+housing7 <- df$hq7_cookfuel #0 = good, 1 = poor
+housing8 <- df$hq8_watersource #0 = tap within premises, 1 = tap outside, 2 = other (NEEDS TRANSFORMATION?)
+df$hq8_watersource_bin <- ifelse(df$hq8_watersource > 0, 1, 0) # recoded; bin = binary
+housing8_bin <- df$hq8_watersource_bin 
+housing9 <- df$hq9_toilet #0 = good, 1 = poor
+
+appliances.count <- df$el_count
+
+#Questions asked about whether household owns X vehicle
+tr_any <- df$tr_any
+tr_bike <- df$tr_bike
+tr_car_van <- df$tr_car_van
+tr_mbike <- df$tr_mbike
+tr_trac_bus_other <- df$tr_trac_bus_oth
+tr_count <- df$tr_count
+
+education <- df$education #0-5 = no education to university or higher; 6 = other (6 NEEDS REMOVING?)
+
+fin_strain <- df$finstrain #0 = comfortably, 4 = v diff to make ends meet
+
+#war
+war.combatant <- df$c1_war1
+war.injured <- df$c1_war2
+war.lost.fam <- df$c1_war3
+war.close.fam.injured <- df$c1_war4
+war.lost.other <- df$c1_war5
+war.other.injured <- df$c1_war6
+war.displaced <- df$c1_war7
+war.lost.property <- df$c1_war8
+
+#tsunami
+tsu1 <- df$c1_tsu1
+tsu2 <- df$c1_tsu2
+tsu3 <- df$c1_tsu3
+tsu4 <- df$c1_tsu4
+tsu5 <- df$c1_tsu5
+tsu6 <- df$c1_tsu6
+tsu7 <- df$c1_tsu7
+tsu8 <- df$c1_tsu8
+tsu9 <- df$c1_tsu9
+tsu10 <- df$c1_tsu10 #qual q
+
+#Depression 
+bdi <- df$pbecktot
+
+var_label(df$depscreen)
+var_label(df$depscreeni)
+table(df$depscreen) #0 = the diagnosis is indeterminate, because questions have missing data, 1 = diagnosis is negative, 5 = diagnosis is positive
+table(df$depscreeni) #same as above but additionally, 3 = criteria for diagnosis are positive except for exclusion criteria
+
+cidi_diagnosis1 <- df$depscreen
+cidi_diagnosis2 <- df$depscreeni
+
+#SI
+var_label(df$beck_q9)
+val_labels(df$beck_q9)
+table(df$beck_q9)
+bdi.si <- df$beck_q9
+
+var_label(df$e18_i)
+var_label(df$e18_ii)
+var_label(df$e19_i)
+var_label(df$e19_ii)
+var_label(df$e20_i)
+var_label(df$e20_ii)
+
+table(df$e18_i) #probably this one because count v low in e18_ii
+table(df$e18_ii)
+
+table(df$e19_i) 
+table(df$e19_ii)
+
+table(df$e19a_i) #only if 19 'yes'
+table(df$e19a_ii)
+
+
+cidi_si_thoughts_death <- df$e18_i
+cidi_si <- df$e19_i
+cidi_si_plans <- df$e19a_i
+
+#SSH
+
+var_label(df$e20_i) #only asked if SI present (pos on e19)
+table(df$e20_i)
+
+ssh <- df$e20_i
+
+#Interpersonal Violence
+
+head(df)
+
+```
+
+#Transforming SES
+```{r}
+
+#To measure standard of living, questions were asked about housing conditions, ownership of household appliances and access to transport. Composite standard of living scores will be created for each participant by taking the sum of all the items. For a composite SES, a sum of standardised responses to each of the 3 scales (standard of living, educational attainment and financial strain). 
+
+#SoL composite (higher score = lower SoL)
+
+# Code standard of living variable formed of the following categories:
+# Housing comp: house tenure & type (2 items); overcrowding (1 item); quality of structural materials (3 items); household commodities (4 items); 
+# Total electricals ownership (1 item); 
+# Access to means of transport (1 item)
+
+# HOUSING (9 items)
+
+#table(df$tenure, useNA = "ifany")
+#table(df$hq1_housetype, useNA = "ifany") 
+#table(df$hq2_roomsforsleep, useNA = "ifany") 
+#table(df$hq3_floorqual, useNA = "ifany") 
+#table(df$hq4_roofqual, useNA = "ifany") 
+#table(df$hq5_wallqual, useNA = "ifany")
+#table(df$hq6_lighting, useNA = "ifany")
+#table(df$hq7_cookfuel, useNA = "ifany") # 0 = gas; 1 = other
+#table(df$hq8_watersource, useNA = "ifany")
+#table(df$hq9_toilet, useNA = "ifany")
+
+# ELECTRICALS OWNERSHIP (1 item); 0 = none; 6 = all six options
+#var_label(df$el_count)
+#table(df$el_count, useNA = "ifany")
+df$rev_el_count <- 6-df$el_count 
+#table(df$rev_el_count, useNA = "ifany")
+
+# TRANSPORT; 0 = none avail; 1 = any avail
+#table(tr_any, useNA = "ifany")
+df$rev_tr_any <- ifelse(df$tr_any == 0, 1,
+                    ifelse(df$tr_any == 1, 0, NA))
+#table(df$rev_tr_any, useNA = "ifany")
+
+# COMPOSITE SOL SCORE (higher = lower SoL)
+
+df$miss_SoL<-apply(df[,c("tenure","hq1_housetype","hq2_roomsforsleep","hq3_floorqual","hq4_roofqual","hq5_wallqual","hq6_lighting","hq7_cookfuel","hq8_watersource","hq9_toilet", "rev_el_count","rev_tr_any")], MARGIN = 1, function(x) sum(is.na(x)))
+table(df$miss_SoL)
+
+df$SoL<-ifelse(df$miss_SoL > 1, NA, rowSums(df[,c("tenure","hq1_housetype","hq2_roomsforsleep","hq3_floorqual","hq4_roofqual","hq5_wallqual","hq6_lighting","hq7_cookfuel","hq8_watersource","hq9_toilet", "rev_el_count","rev_tr_any")], na.rm = TRUE))
+table(df$SoL, useNA = "ifany")
+
+# EDUCATION (recoded so higher score = lower)
+
+#val_labels(df$education)
+#table(df$education)
+df$education <- ifelse(df$education > 5, NA, df$education)
+df$rev_education <- 5-df$education
+#table(df$rev_education, useNA = "ifany")
+
+# FINANCIAL STRAIN
+
+#val_labels(df$finstrain)
+#table(df$finstrain, useNA = "ifany")
+
+# STANDARDISE SES SUB-SCALES
+
+df$stand_SoL <- as.vector(scale(df$SoL))
+
+df$stand_rev_education <- as.vector(scale(df$rev_education))
+
+df$stand_finstrain <-  as.vector(scale(df$finstrain))
+
+df$SES <- df$stand_SoL + df$stand_rev_education + df$stand_finstrain
+
+df$stand_SES <- as.vector(scale(df$SES)) #numeric data (continuous)
+
+df$stand_SoL <- as.numeric(df$stand_SoL) #numeric data (continuous)
+df$stand_rev_education<- as.numeric(df$stand_rev_education) #numeric data (continuous)
+df$stand_finstrain<- as.numeric(df$stand_finstrain) #numeric data (continuous)
+
+cvar <- df[,c("stand_SoL", "stand_rev_education", "stand_finstrain")]
+(corrs <- round(cor(cvar, use = "p"),2))
+```
+
+# Transforming Affected by War
+```{r}
+
+df$affected.war <- df$c1_war1+df$c1_war2+df$c1_war3+df$c1_war4+df$c1_war5+df$c1_war6+df$c1_war7+df$c1_war8
+
+#table(df$affected.war)
+
+df$affected.war.bin[df$affected.war == 8] <- "0"
+df$affected.war.bin[df$affected.war == 12] <- "1"
+df$affected.war.bin[df$affected.war == 16] <- "1"
+df$affected.war.bin[df$affected.war == 20] <- "1"
+df$affected.war.bin[df$affected.war == 24] <- "1"
+df$affected.war.bin[df$affected.war == 28] <- "1"
+
+affected.war.bin <- df$affected.war.bin
+
+table(affected.war.bin, useNA = "ifany") #logical data (binary ordinal)
+
+```
+
+# Transforming Affected by Tsunami
+```{r}
+df$affected.tsu <- tsu1 + tsu2 + tsu3 + tsu4 + tsu5 + tsu6 + tsu7 + tsu8 + tsu9
+
+#table(df$affected.tsu)
+
+df$affected.tsu.bin[df$affected.tsu == 9] <- "0"
+df$affected.tsu.bin[df$affected.tsu == 13] <- "1"
+df$affected.tsu.bin[df$affected.tsu == 17] <- "1"
+df$affected.tsu.bin[df$affected.tsu == 21] <- "1"
+df$affected.tsu.bin[df$affected.tsu == 25] <- "1"
+df$affected.tsu.bin[df$affected.tsu == 29] <- "1"
+df$affected.tsu.bin[df$affected.tsu == 33] <- "1"
+df$affected.tsu.bin[df$affected.tsu == 37] <- "1"
+
+affected.tsu.bin <- df$affected.tsu.bin
+
+table(affected.tsu.bin, useNA = "ifany") #logical data (binary ordinal)
+
+```
+
+# Transforming Interpers Violence
+```{r}
+
+
+df$interpers_viol <- df$sle35_robbed + df$sle40_weapon + df$sle18_physabuse + df$sle42_sexabuse + df$sle43_scold_work + df$sle44_bullied + df$sle45_enthdisc +df$sle56_scam
+
+df$interpers_viol <- as.numeric(df$interpers_viol)
+
+table(df$interpers_viol, useNA = "ifany") #numeric integer data (continuous)
+
+```
+
+# Transforming MH variables
+```{r}
+
+#Depression symptoms
+
+hist(df$pbecktot)
+
+#Log transformation
+
+df$bdi_T <- log(df$pbecktot + 8)*2
+hist(df$bdi_T)
+psych::describe(df$bdi_T)
+
+df$bdi_TS <- scale(df$bdi_T)
+hist(df$bdi_TS)
+psych::describe(df$bdi_TS)
+sum(is.na(df$bdi_TS)) #119
+
+hist(bdi) #Numeric/Interger Data (continuous). The same as df$pbecktot
+#summary(bdi)
+#table(cidi_diagnosis1) # 0 = diagnosis is indetermined, have to exclude? This is the same as df$depscreen
+
+#Transforming CIDI depression
+
+table(df$depscreen)
+df$depscreen2 <- ifelse(df$depscreen < 1, 1, df$depscreen) #set diagnosis undetermined to NA
+
+df$depscreen2[df$depscreen2 == 1] <- 0
+df$depscreen2[df$depscreen2 == 5] <- 1
+
+#table(df$depscreen)
+table(df$depscreen2) # only those who completed the full clinical interview, having passed the probe q; logical data (binary ordinal) 
+
+#val_labels(df$e1) #probe 1 = >=2 weeks feeling sad, empty or depressed in past 12m
+#val_labels(df$e2) #probe 2 = >=2 weeks lost interest in most things in past 12m
+#either probe = 5 -> continue with interview
+
+#df$cidi_depression[df$depscreen2]
+
+#SI
+
+#bdi.si = df$beck_q9
+#cidi_si = df$e19_i
+
+#table(bdi.si) #whole sample
+#table(cidi_si) #only if probe pos -> use as sensitivity analysis on a smaller sample?
+
+#Transforming BDI SI to binary
+
+df$bdi_si_bin <- ifelse(df$beck_q9 > 0, 1, df$beck_q9) #set all SI answers to binary SI
+
+table(df$bdi_si_bin)
+
+table(df$e19_i)
+df$cidi_si_bin[df$e19_i == 1] <- 0
+df$cidi_si_bin[df$e19_i == 5] <- 1
+table(df$cidi_si_bin)
+
+#SSH
+
+var_label(df$e20_i)
+val_labels(df$e20_i)
+table(df$e20_i)
+
+df$ssh[df$e20_i == 5] <- 1
+df$ssh[df$e20_i == 1] <- 0
+df$ssh[df$depscreen2 == 0] <- 0
+
+table(df$ssh)
+
+#table(ssh) ##only if probe pos and SI pos -> 23 attempted suicide only; could transform to have more as '1' but would still only have 23 as '5'
+
+```
+
+# Violence-MH Associations
+```{r}
+
+#pbecktot = BDI dep symptoms; Numeric/Interger Data (continuous)
+#depscreen2 = CIDI dep diagnosis; logical data (binary ordinal) 
+#beck_q9 = BDI SI; integer data
+#bdi_si_bin = BDI SI dichotomised; logical data (binary)
+#e19_i = CIDI SI in dep; logical data (binary)
+
+library(data.table)
+library(arsenal)
+library(lavaan)
+library(dplyr)
+
+#Depression
+  
+describeBy(df$pbecktot, df$interpers_viol, mat = TRUE)
+
+table(df$depscreen2, df$interpers_viol)
+
+table(df$bdi_si_bin, df$interpers_viol)
+
+table(df$e19_i, df$interpers_viol)
+
+```
+
+# Symptoms
+
+```{r}
+
+m1 <- miceadds::lm.cluster(data = df, formula = bdi_TS ~ interpers_viol, cluster = "clustervar")
+
+summary(m1)
+confint(m1)
+exp(cbind("Odds ratio" = coef(m1), confint.default(m1, level = 0.95)))
+
+# Missing Data Amount
+sum(!is.na(df$bdi_TS)&!is.na(df$interpers_viol))
+sum(!is.na(df$bdi_TS)&is.na(df$interpers_viol)) #6
+sum(is.na(df$bdi_TS)&!is.na(df$interpers_viol)) #19 total = 25
+```
+
+# Diagnosis
+
+```{r}
+table(df$depscreen2)
+
+m2 <- miceadds::glm.cluster(data = df, formula = depscreen2 ~ interpers_viol, cluster = "clustervar", family = "binomial")
+
+summary(m2)
+confint(m2)
+exp(cbind("Odds ratio" = coef(m2), confint.default(m2, level = 0.95)))
+
+# Missing Data Amount
+sum(!is.na(df$depscreen2)&!is.na(df$interpers_viol))
+sum(!is.na(df$depscreen2)&is.na(df$interpers_viol)) #6
+sum(is.na(df$depscreen2)&!is.na(df$interpers_viol)) #0 total = 6
+```
+
+# Suicidal Ideation
+
+```{r}
+m3 <- miceadds::glm.cluster(data = df, formula = bdi_si_bin ~ interpers_viol, cluster = "clustervar", family = "binomial")
+
+summary(m3)
+confint(m3)
+exp(cbind("Odds ratio" = coef(m3), confint.default(m3, level = 0.95)))
+
+# Missing Data Amount
+sum(!is.na(df$bdi_si_bin)&!is.na(df$interpers_viol))
+sum(!is.na(df$bdi_si_bin)&is.na(df$interpers_viol)) #6
+sum(is.na(df$bdi_si_bin)&!is.na(df$interpers_viol)) #2 total = 8
+```
+
+# Sensitivity Analysis with CIDI SI
+
+```{r}
+m4 <- miceadds::glm.cluster(data = df, formula = cidi_si_bin ~ interpers_viol, cluster = "clustervar", family = "binomial")
+
+summary(m4)
+confint(m4)
+```
+
+

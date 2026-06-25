@@ -1,0 +1,466 @@
+---
+title: "Bivariate GxE: Depression moderated by interpersonal violence  (COTASS)"
+author: "Filip Kaleta"
+date: "2024-02-20"
+output: 
+  html_document:
+    toc: true
+---
+
+# Load packages  
+```{r include=FALSE}
+
+rm(list=ls())
+
+# Packages
+
+require(OpenMx)
+require(Hmisc)
+require(psych)
+require(plyr)
+library(haven)
+require(psych)
+library(dplyr)
+library(tidyverse)
+library(labelled)
+
+```
+
+# Prep data
+```{r}
+
+df <- read_dta("IPV-and-depression3.dta") #N = 5961
+
+df <- df[!(df$whichcotass == 1 | df$whichcotass == 2),] #Only keeping participants with COTASS 1 and COTASS 2 data (most vars and analyses are T2 anyway, so creates a lot of NA id we keep T1) N = 3876
+
+df$interpers_viol <- df$sle35_robbed + df$sle40_weapon + df$sle18_physabuse + df$sle42_sexabuse + df$sle43_scold_work + df$sle44_bullied + df$sle45_enthdisc + df$sle56_scam
+
+df$interpers_viol <- as.numeric(df$interpers_viol) 
+
+dtw <- df[c("numclust", "c1c2_sexzyg", "numtw_noDZOS", "sing_or_twin", "sex_c1c2",  "age_yrs","interpers_viol", "pbecktot")]
+
+dtw<-data.frame(dtw) 
+
+head(dtw)
+
+## Need to recode numtw_noDZOS so that singletons are given put in 'twin 1'
+table(dtw$numtw_noDZOS, useNA = "ifany")
+table(dtw$sing_or_twin)
+
+dtw$TwNo <- ifelse(is.na(dtw$numtw_noDZOS), 1, 
+                           ifelse(dtw$numtw_noDZOS == 1, 1,
+                                  ifelse(dtw$numtw_noDZOS == 2, 2, 
+                                         ifelse(dtw$numtw_noDZOS == 3, 3, NA))))
+table(dtw$TwNo, useNA = "ifany")
+
+# Because we don't want triplets, remove lines in which TwNo==3; this removes the 3rd sibling in each triplet group
+table(dtw$c1c2_sexzyg, useNA = "ifany")
+which(is.na(dtw$c1c2_sexzyg))
+dtw <- dtw[!(dtw$c1c2_sexzyg == 7),]
+dtw <- dtw[!is.na(dtw$c1c2_sexzyg),]
+
+table(dtw$TwNo, useNA = "ifany")
+
+
+psych::describe(dtw)
+head(dtw)
+
+# Delete unnecessary vars & rename variables in sub data to make it easier. 
+
+dtw <- dtw[c("numclust", "c1c2_sexzyg", "sing_or_twin", "sex_c1c2", "age_yrs","interpers_viol", "pbecktot", "TwNo")]
+
+names(dtw) <- c("FamID", "sexzyg", "sing_or_twin", "sex", "age", "interpers_viol", "bdi_dep", "TwNo")
+```
+
+# Remove outliers, regress out covariates, transform, reshape (if necessary)
+
+```{r}
+#Depression
+
+## BDI Depression Log Transformations
+
+sum(is.na(dtw$bdi_dep)) #51
+hist(dtw$bdi_dep)
+psych::describe(dtw$bdi_dep)
+
+dtw$bdi_dep_resid <- residuals(lm(dtw$bdi_dep ~ dtw$sex + dtw$age, na.action="na.exclude"))
+sum(is.na(dtw$bdi_dep_resid)) #51
+hist(dtw$bdi_dep_resid)
+psych::describe(dtw$bdi_dep_resid)
+
+# Log transformation + standardise
+
+dtw$bdi_depT <- log(dtw$bdi_dep_resid + 8)*2
+hist(dtw$bdi_depT)
+psych::describe(dtw$bdi_depT) 
+
+dtw$bdi_depTS <- scale(dtw$bdi_depT)
+hist(dtw$bdi_depTS)
+psych::describe(dtw$bdi_depTS)
+sum(is.na(dtw$bdi_depTS)) #
+
+# No logT 
+#dtw$bdi_dep_rS <- scale(dtw$bdi_dep_resid)
+#psych::describe(dtw$bdi_dep_rS)
+#hist(dtw$bdi_dep_rS)
+
+## Interpers Viol Log Transformations
+
+sum(is.na(dtw$interpers_viol)) #38
+dtw$interpers_viol <- as.numeric(dtw$interpers_viol)
+hist(dtw$interpers_viol)
+psych::describe(dtw$interpers_viol)
+
+dtw$interpers_viol_resid <- residuals(lm(dtw$interpers_viol ~ dtw$sex + dtw$age, na.action="na.exclude"))
+sum(is.na(dtw$interpers_viol_resid)) #38
+hist(dtw$interpers_viol_resid)
+psych::describe(dtw$interpers_viol_resid)
+
+# Log transformation
+
+dtw$interpers_violT <- log(dtw$interpers_viol_resid + 1)*2
+hist(dtw$interpers_violT)
+psych::describe(dtw$interpers_violT)
+
+dtw$interpers_violTS <- scale(dtw$interpers_violT)
+hist(dtw$interpers_violTS)
+psych::describe(dtw$interpers_violTS)
+sum(is.na(dtw$interpers_violTS)) #38
+
+```
+
+# Reshape data from long format to wide format for twin analysis:
+```{r include=FALSE}
+
+dtw 	<- reshape(dtw, idvar = c("FamID","sexzyg"), timevar = "TwNo", direction = "wide", sep = "")
+
+# Check data
+str(dtw)
+psych::describe(dtw)
+
+```
+
+# Create data groups 
+```{r "create data groups", include = T, echo = T, collapse = T, eval = T}
+
+## Prepare data
+
+# Create new variable to be used as definition variable (i.e. moderator)
+dtw$interpers_violm1 <- dtw$interpers_violTS1
+dtw$interpers_violm2 <- dtw$interpers_violTS2
+#describe(dtw$interpers_violm1)
+#describe(dtw$interpers_violm2)
+
+nv <- 2		# number of variables per twin
+ntv <- nv*2	# number of variables per pair
+
+# Select Variables for Analysis
+Vars <- c('interpers_violTS','bdi_depTS')
+selVars <- paste(Vars,c(rep(1,nv),rep(2,nv)),sep="")
+selVarsS <- c('interpers_violTS1','bdi_depTS1')
+defVars <- c('interpers_violm1','interpers_violm2')
+
+# Drop cases with missingness on the definition variables
+
+mzData <-dtw[c(dtw$sexzyg==1 | dtw$sexzyg==3) & !is.na(dtw$interpers_violTS1) & !is.na(dtw$interpers_violTS2), c(selVars, c('interpers_violm1','interpers_violm2'))]
+dzData <-dtw[c(dtw$sexzyg==2 | dtw$sexzyg==4 | dtw$sexzyg == 5) & !is.na(dtw$interpers_violTS1) & !is.na(dtw$interpers_violTS2), c(selVars, c('interpers_violm1','interpers_violm2'))]
+sData <-dtw[dtw$sexzyg==6 & !is.na(dtw$interpers_violTS1), c(selVarsS, 'interpers_violm1')]
+
+#describe(mzData)
+#describe(dzData)
+#describe(sData)
+
+```
+
+# Generate descriptive statistics
+
+```{r "descriptives", include = T, echo = T, collapse = T, eval = T}
+
+colMeans(mzData,na.rm=TRUE)
+colMeans(dzData,na.rm=TRUE)
+colMeans(sData,na.rm=TRUE)
+
+cov(mzData,use="complete")
+cov(dzData,use="complete")
+cov(sData,use="complete")
+
+cor(mzData,use="complete")
+cor(dzData,use="complete")
+cor(sData,use="complete")
+
+sqrt(cov(mzData, use="complete")/5)
+sqrt(cov(dzData, use="complete")/5)
+sqrt(cov(sData, use="complete")/5)
+
+```
+
+# Script for bivariate GxE model 
+```{r "run GxE model - v1", include = T, echo = T, eval = T}
+
+# PREPARE MODEL -----------------------------------------------------------
+
+# Matrix for expected Means
+
+meanG     <- mxMatrix(type="Full", nrow=1, ncol=ntv, free=TRUE, values=.01, label=c("m1","m2","m1","m2"), name="expMean") #m1 = SoL; m2 = depression (need both means for the objective objects for multiple groups (line 188) code to work)
+meanS <- mxMatrix(type = "Full", nrow=1, ncol=2, free=TRUE, values=.01, label=c("m1","m2"), name="expMeanS") # singletons 
+
+# Matrices declared to store a, c, and e Path Coefficients
+pathA     <- mxMatrix(type="Lower", nrow=nv, ncol=nv, free=TRUE, values=.6, label=c("a11","a21","a22"), name="a") 
+pathC     <- mxMatrix(type="Lower", nrow=nv, ncol=nv, free=TRUE, values=.6, label=c("c11","c21","c22"), name="c") 
+pathE     <- mxMatrix(type="Lower", nrow=nv, ncol=nv, free=TRUE, values=.6, label=c("e11","e21","e22"), name="e") 
+
+# Matrices generated to hold A, C, and E computed Variance Components
+covA      <- mxAlgebra(expression=a %*% t(a), name="A")
+covC      <- mxAlgebra(expression=c %*% t(c), name="C") 
+covE      <- mxAlgebra(expression=e %*% t(e), name="E")
+
+# Algebra to compute total variances and standard deviations (diagonal only)
+covP      <- mxAlgebra(expression=A+C+E, name="V")
+matI      <- mxMatrix(type="Iden", nrow=nv, ncol=nv, name="I")
+invSD     <- mxAlgebra(expression=solve(sqrt(I*V)), name="iSD")
+
+# Algebras generated to create summary Table of Derived Variance Components
+rowVars   <- rep('vars',nv)
+colVars   <- rep(c('A','C','E','SA','SC','SE'),each=nv)
+estVars   <- mxAlgebra(expression=cbind(A,C,E,A/V,C/V,E/V), name="Vars", dimnames=list(rowVars,colVars))
+
+# Matrix for moderating/interacting variable
+definterpers_violm1   <- mxMatrix(type="Full", nrow=1, ncol=1, free=FALSE, labels=c("data.interpers_violm1"), name="interpers_violm1")
+definterpers_violm2   <- mxMatrix(type="Full", nrow=1, ncol=1, free=FALSE, labels=c("data.interpers_violm2"), name="interpers_violm2")
+
+# Matrices declared to store moderated a, c, and e Path Coefficients
+pathAm    <- mxMatrix(type="Lower", nrow=nv, ncol=nv, free=c(F,T,T), values=c(0,.01,.01), label=c("fix","am21","am22"), name="aMod") 
+pathCm    <- mxMatrix(type="Lower", nrow=nv, ncol=nv, free=c(F,T,T), values=c(0,.01,.01), label=c("fix","cm21","cm22"), name="cMod")
+pathEm    <- mxMatrix(type="Lower", nrow=nv, ncol=nv, free=c(F,T,T), values=c(0,.01,.01), label=c("fix","em21","em22"), name="eMod")
+
+# Matrices generated to hold moderated A, C, and E computed Variance Components
+varAm1    <- mxAlgebra(expression=(a+ interpers_violm1%x%aMod) %*% t(a+ interpers_violm1%x%aMod), name="Am1")
+varCm1    <- mxAlgebra(expression=(c+ interpers_violm1%x%cMod) %*% t(c+ interpers_violm1%x%cMod), name="Cm1")
+varEm1    <- mxAlgebra(expression=(e+ interpers_violm1%x%eMod) %*% t(e+ interpers_violm1%x%eMod), name="Em1")
+
+varAm2    <- mxAlgebra(expression=(a+ interpers_violm2%x%aMod) %*% t(a+ interpers_violm2%x%aMod), name="Am2")
+varCm2    <- mxAlgebra(expression=(c+ interpers_violm2%x%cMod) %*% t(c+ interpers_violm2%x%cMod), name="Cm2")
+varEm2    <- mxAlgebra(expression=(e+ interpers_violm2%x%eMod) %*% t(e+ interpers_violm2%x%eMod), name="Em2")
+
+covAm12   <- mxAlgebra(expression=(a+ interpers_violm1%x%aMod) %*% t(a+ interpers_violm2%x%aMod), name="Am12")
+covCm12   <- mxAlgebra(expression=(c+ interpers_violm1%x%cMod) %*% t(c+ interpers_violm2%x%cMod), name="Cm12")
+covAm21   <- mxAlgebra(expression=(a+ interpers_violm2%x%aMod) %*% t(a+ interpers_violm1%x%aMod), name="Am21")
+covCm21   <- mxAlgebra(expression=(c+ interpers_violm2%x%cMod) %*% t(c+ interpers_violm1%x%cMod), name="Cm21")
+
+# Algebra to compute total variances and standard deviations (diagonal only)
+covPm1    <- mxAlgebra(expression=Am1+Cm1+Em1, name="Vm1")
+covPm2    <- mxAlgebra(expression=Am2+Cm2+Em2, name="Vm2")
+
+# Algebra for expected Mean and Variance/Covariance Matrices in MZ & DZ twins
+covMZ    <- mxAlgebra(expression= rbind(cbind(Vm1, Am12+Cm12), cbind(Am21+Cm21, Vm2)), name="expCovMZ")
+covDZ    <- mxAlgebra(expression= rbind(cbind(Vm1, 0.5%x%Am12+Cm12), cbind(0.5%x%Am21+Cm21, Vm2)), name="expCovDZ")
+
+# Algebra to derive expected variance singletons
+covS		<-mxAlgebra(((a+aMod*interpers_violm1)*t(a+aMod*interpers_violm1)) + ((c+cMod*interpers_violm1)*t(c+cMod*interpers_violm1)) + ((e+eMod*interpers_violm1)*t(e+eMod*interpers_violm1)), name="Vm1") # singletons 
+
+# Data objects for Multiple Groups
+dataMZ <-mxData(observed=mzData, type="raw")
+dataDZ <-mxData(observed=dzData, type="raw")
+dataS	<-mxData(observed=sData, type="raw")
+
+# Objective objects for Multiple Groups
+objMZ  <- mxExpectationNormal(covariance="expCovMZ", means="expMean", dimnames=selVars)
+objDZ  <- mxExpectationNormal(covariance="expCovDZ", means="expMean", dimnames=selVars)
+objS		<- mxExpectationNormal(covariance="Vm1", means="expMeanS", dimnames=selVarsS) # singletons 
+
+funML <- mxFitFunctionML()
+
+# Combine Groups
+
+pars    <- list(pathA, pathC, pathE, pathAm, pathCm, pathEm, meanG, meanS, covA, covC, covE, covP, matI, invSD, estVars)
+defs    <- list(definterpers_violm1, definterpers_violm2, varAm1, varCm1, varEm1, covPm1, varAm2, varCm2, varEm2, covPm2, covAm12, covCm12, covAm21, covCm21)
+modelMZ <- mxModel(pars, defs, covMZ, dataMZ, objMZ, funML, name="MZ")
+modelDZ <- mxModel(pars, defs, covDZ, dataDZ, objDZ, funML, name="DZ")
+modelSs	<- mxModel(pars, definterpers_violm1, varAm1, varCm1, varEm1, covPm1, covS, dataS, objS, funML,name="Ss") #singletons   
+multi <- mxFitFunctionMultigroup(c("MZ","DZ","Ss"))
+ci <-mxCI(c('MZ.a', 'MZ.c', 'MZ.e')) 
+cim <-mxCI(c('MZ.aMod', 'MZ.cMod', 'MZ.eMod')) 	
+ModAceModel <- mxModel("ModACE", pars, modelMZ, modelDZ, modelSs, ci, cim, multi)
+
+```
+
+# Run bix GxE Model
+```{r}
+
+#ModAceFit <- mxRun(ModAceModel, intervals =T)
+ModAceFit <- mxTryHard(ModAceModel, intervals = T, extraTries = 20)
+(ModAceSum <- summary(ModAceFit))
+
+#ModAceSum$parameters
+round(ModAceFit@output$estimate,4)
+round(ModAceFit$Vars@result,4)
+
+```
+
+# Submodel 1 - drop all moderators 
+```{r "submodels-1", include = T, echo = T, eval = T}
+
+NoModModel<-mxModel(ModAceFit, name="NoMod")
+NoModModel<-omxSetParameters(NoModModel, labels=c("am21","am22","cm21","cm22","em21","em22"), free=F, values=0)
+NoModFit <-mxTryHard(NoModModel, intervals=T)
+(NoModSumm <-summary(NoModFit))
+
+mxCompare(ModAceFit,NoModFit)
+
+```
+
+# Sub model 2 - drop a22, c22 and e22 
+```{r "submodels-2", include = T, echo = T, eval = T}
+
+subMod2<-mxModel(ModAceFit, name="subMod2")
+subMod2<-omxSetParameters(subMod2, labels=c("am22","cm22","em22"), free=F, values=0)
+subMod2Fit <-mxTryHard(subMod2, intervals=T)
+(subMod2Summ <-summary(subMod2Fit))
+
+mxCompare(ModAceFit,subMod2Fit)
+
+```
+
+# Sub model 3 - drop a21, c21 and e21
+```{r}
+
+subMod3<-mxModel(ModAceFit, name="subMod3")
+subMod3<-omxSetParameters(subMod3, labels=c("am21","cm21","em21"), free=F, values=0)
+subMod3Fit <-mxTryHard(subMod3, intervals=T)
+(subMod3Summ <-summary(subMod3Fit))
+
+mxCompare(ModAceFit,subMod3Fit)
+
+```
+
+# Compare all models
+```{r "nest-fit", include = T, echo = T, eval = T}
+
+(Nested.fit <- 	rbind	(
+			mxCompare(ModAceFit, NoModFit) [1,],
+			mxCompare(ModAceFit, NoModFit) [2,],
+			mxCompare(ModAceFit, subMod2Fit) [2,],
+			mxCompare(ModAceFit, subMod3Fit) [2,]))
+
+mxCompare(ModAceFit, NoModFit)
+mxCompare(ModAceFit, subMod2Fit)
+mxCompare(subMod2Fit, NoModFit)
+
+```
+
+# Plot interaction effects 
+```{r "plot interactions"}
+
+## Assign estimated parameters to variables
+
+# path estimates
+a11	<- ModAceFit$a[1,1]@values
+a21 <- ModAceFit$a[2,1]@values
+a22 <- ModAceFit$a[2,2]@values
+c11	<- ModAceFit$c[1,1]@values
+c21 <- ModAceFit$c[2,1]@values
+c22 <- ModAceFit$c[2,2]@values
+e11	<- ModAceFit$e[1,1]@values
+e21 <- ModAceFit$e[2,1]@values
+e22 <- ModAceFit$e[2,2]@values
+
+# moderator terms 
+am21 <- ModAceFit$aMod[2,1]@values
+am22 <- ModAceFit$aMod[2,2]@values
+cm21 <- ModAceFit$cMod[2,1]@values
+cm22 <- ModAceFit$cMod[2,2]@values
+em21 <- ModAceFit$eMod[2,1]@values
+em22 <- ModAceFit$eMod[2,2]@values
+
+## Sort moderator values and save to vector
+modVal <- sort(unique(c(dtw$interpers_violm1,dtw$interpers_violm2)))
+
+Vam21 <- ((c(a21)+(c(modVal)*c(am21)))^2)
+Vam22 <- ((c(a22)+(c(modVal)*c(am22)))^2)
+Vcm21 <- ((c(c21)+(c(modVal)*c(cm21)))^2)
+Vcm22 <- ((c(c22)+(c(modVal)*c(cm22)))^2)
+Vem21 <- ((c(e21)+(c(modVal)*c(em21)))^2)
+Vem22 <- ((c(e22)+(c(modVal)*c(em22)))^2)
+
+#Vacov <-2* (0.5 * c(am) * (c(ap)+(c(modVal)*c(m_ap))) * (c(p)+(c(modVal)*c(m_p)))) # example from GxE MCoTS model
+#Vccov <-2* (c(cp)+(c(modVal)*c(m_cp)) * (c(p)+(c(modVal)*c(m_p))))
+
+Vacov <- 2*(c(a21)+(c(modVal)*c(am21)))
+Vccov <- 2*(c(c21)+(c(modVal)*c(cm21)))
+
+#Vt <- Vam21 + Vam22 + Vcm21 + Vcm22 + Vem21 + Vem22 
+#Vt <- Vam22 + Vam21 + Vcm22 + Vcm21 + Vem22 + Vem21 
+Vt <- Vam22 + Vam21 + Vcm22 + Vcm21 + Vem22 + Vem21 + Vacov + Vccov
+
+#varcomps <- as.matrix(cbind(Vam21,Vam22,Vcm21,Vcm22,Vem21,Vem22,Vt))
+varcomps <- as.matrix(cbind(Vam22,Vam21,Vcm22,Vcm21,Vem22,Vem21,Vt))
+head(varcomps)
+
+# Plot variance components as a function of the moderator
+# NB: Va = red, Vc = orange, Ve = blue, VaC = purple, VcC = yellow, VeC = green, Vt = black
+# NB: Va = red, VaC = orange, Vc = blue, VcC = purple, Ve = green, VeC = yellow, Vt = black
+
+matplot(
+  modVal,
+  varcomps,
+  type="l",
+  lwd=2,
+  lty=1,
+  las=1,
+  ylim=c(0,3),
+  #col=c("red","orange","blue","purple","yellow","green","black"),
+  col=c("red","orange","blue","purple","green","yellow","black"),
+  frame=FALSE,
+  main="Bivariate moderation of variance components: Depression Symptoms",
+  xlab="Moderator: Interpersonal Violence",
+  ylab="Variance Components"
+  
+)
+#legend("topright",legend=c("Au","Ac","Cu","Cc","Eu","Ec","Total variance"),col=c("red","orange","blue","purple","green","yellow","black"),lty=1)
+
+
+```
+
+```{r "plot interactions 2"}
+
+varcomps1 <- as.matrix(cbind(Vam22,Vcm22,Vem22,Vt))
+head(varcomps1)
+
+matplot(
+  modVal,
+  varcomps1,
+  type="l",
+  lwd=2,
+  lty=1,
+  las=1,
+  ylim=c(0,2),
+  col=c("red","blue","green","black"),
+  frame=FALSE,
+  main="Bivariate moderation of variance components: Depression Symptoms",
+  xlab="Moderator (Interpersonal Violence)",
+  ylab="Variance Components"
+  
+)
+legend("topright",legend=c("A22","C22","E22","Total variance"),col=c("red","blue","green","black"),lty=1)
+
+varcomps2 <- as.matrix(cbind(Vam21,Vcm21,Vem21,Vt))
+head(varcomps2)
+
+matplot(
+  modVal,
+  varcomps2,
+  type="l",
+  lwd=2,
+  lty=1,
+  las=1,
+  ylim=c(0,2),
+  col=c("orange","purple","yellow","black"),
+  frame=FALSE,
+  main="Bivariate moderation of variance components: Depression Symptoms",
+  xlab="Moderator (Interpersonal Violence)",
+  ylab="Variance Components"
+  
+)
+legend("topright",legend=c("A21","C21","E21","Total variance"),col=c("orange","purple","yellow","black"),lty=1)
+
+```

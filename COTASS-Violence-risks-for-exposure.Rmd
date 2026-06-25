@@ -1,0 +1,818 @@
+---
+title: "COTASS Interpersonal Violence Project - Risk Factors for Experiencing Interpersonal Violence"
+author: "Filip Kaleta"
+date: "2023-12-06"
+output: 
+  html_document:
+    toc: true
+---
+
+# Packages
+
+```{r include=FALSE}
+library(haven)
+library(psych)
+library(ggplot2)
+library(scales)
+library(stringr)
+library(dplyr)
+library(forcats)
+library(tidyverse)
+library(labelled)
+library(car)
+library(miceadds)
+library(texreg)
+library(sandwich)
+library(broom)
+library(knitr)
+library(foreign)
+
+```
+
+# Objects of Variables
+
+```{r include=FALSE}
+rm(list=ls())
+
+df <- read_dta("IPV-and-depression3.dta")
+
+View(df)
+
+df <- df[!(df$whichcotass == 1 | df$whichcotass == 2),]
+
+head(df)
+
+var_label(df$sex_c1c2)
+val_labels(df$sex_c1c2)
+
+var_label(df$c1_war1)
+val_labels(df$c1_war1)
+
+var_label(df$c1_war2)
+var_label(df$c1_war3)
+var_label(df$c1_war4)
+var_label(df$c1_war5)
+var_label(df$c1_war6)
+var_label(df$c1_war7)
+var_label(df$c1_war8)
+
+var_label(df$ethnicity)
+val_labels(df$ethnicity)
+
+var_label(df$ethn_minority)
+val_labels(df$ethn_minority)
+
+
+#demographic
+
+sex <- df$sex_c1c2
+age <- df$age_yrs
+marstat <- df$marstat
+ethnicity <- df$ethnicity
+ethn_minority <- df$ethn_minority
+
+val_labels(df$tenure)
+tenure <- df$tenure
+table(tenure)
+
+val_labels(df$hq1_housetype)
+val_labels(df$hq2_roomsforsleep)
+val_labels(df$hq3_floorqual)
+val_labels(df$hq4_roofqual)
+val_labels(df$hq5_wallqual)
+val_labels(df$hq6_lighting)
+val_labels(df$hq7_cookfuel)
+val_labels(df$hq8_watersource)
+val_labels(df$hq9_toilet)
+
+housing1 <- df$hq1_housetype #0 = good, 1 = poor
+housing2 <- df$hq2_roomsforsleep #0 = good, 1 = poor
+housing3 <- df$hq3_floorqual #0 = good, 1 = poor
+housing4 <- df$hq4_roofqual #0 = good, 1 = poor
+housing5 <- df$hq5_wallqual #0 = good, 1 = poor
+housing6 <- df$hq6_lighting #0 = good, 1 = poor
+housing7 <- df$hq7_cookfuel #0 = good, 1 = poor
+housing8 <- df$hq8_watersource #0 = tap within premises, 1 = tap outside, 2 = other (NEEDS TRANSFORMATION?)
+df$hq8_watersource_bin <- ifelse(df$hq8_watersource > 0, 1, 0) # recoded; bin = binary
+housing8_bin <- df$hq8_watersource_bin 
+housing9 <- df$hq9_toilet #0 = good, 1 = poor
+
+appliances.count <- df$el_count
+
+#Questions asked about whether household owns X vehicle
+tr_any <- df$tr_any
+tr_bike <- df$tr_bike
+tr_car_van <- df$tr_car_van
+tr_mbike <- df$tr_mbike
+tr_trac_bus_other <- df$tr_trac_bus_oth
+tr_count <- df$tr_count
+
+education <- df$education #0-5 = no education to university or higher; 6 = other (6 NEEDS REMOVING?)
+
+fin_strain <- df$finstrain #0 = comfortably, 4 = v diff to make ends meet
+
+#war
+war.combatant <- df$c1_war1
+war.injured <- df$c1_war2
+war.lost.fam <- df$c1_war3
+war.close.fam.injured <- df$c1_war4
+war.lost.other <- df$c1_war5
+war.other.injured <- df$c1_war6
+war.displaced <- df$c1_war7
+war.lost.property <- df$c1_war8
+
+#tsunami
+tsu1 <- df$c1_tsu1
+tsu2 <- df$c1_tsu2
+tsu3 <- df$c1_tsu3
+tsu4 <- df$c1_tsu4
+tsu5 <- df$c1_tsu5
+tsu6 <- df$c1_tsu6
+tsu7 <- df$c1_tsu7
+tsu8 <- df$c1_tsu8
+tsu9 <- df$c1_tsu9
+tsu10 <- df$c1_tsu10 #qual q
+
+#Depression 
+bdi <- df$pbecktot
+
+var_label(df$depscreen)
+var_label(df$depscreeni)
+table(df$depscreen) #0 = the diagnosis is indeterminate, because questions have missing data, 1 = diagnosis is negative, 5 = diagnosis is positive
+table(df$depscreeni) #same as above but additionally, 3 = criteria for diagnosis are positive except for exclusion criteria
+
+cidi_diagnosis1 <- df$depscreen
+cidi_diagnosis2 <- df$depscreeni
+
+#SI
+var_label(df$beck_q9)
+val_labels(df$beck_q9)
+table(df$beck_q9)
+bdi.si <- df$beck_q9
+
+var_label(df$e18_i)
+var_label(df$e18_ii)
+var_label(df$e19_i)
+var_label(df$e19_ii)
+var_label(df$e20_i)
+var_label(df$e20_ii)
+
+table(df$e18_i) #probably this one because count v low in e18_ii
+table(df$e18_ii)
+
+table(df$e19_i) 
+table(df$e19_ii)
+
+table(df$e19a_i) #only if 19 'yes'
+table(df$e19a_ii)
+
+
+cidi_si_thoughts_death <- df$e18_i
+cidi_si <- df$e19_i
+cidi_si_plans <- df$e19a_i
+
+#SSH
+
+var_label(df$e20_i) #only asked if SI present (pos on e19)
+table(df$e20_i)
+
+ssh <- df$e20_i
+
+#Interpersonal Violence
+
+head(df)
+
+```
+
+#Transforming SES
+```{r}
+
+#To measure standard of living, questions were asked about housing conditions, ownership of household appliances and access to transport. Composite standard of living scores will be created for each participant by taking the sum of all the items. For a composite SES, a sum of standardised responses to each of the 3 scales (standard of living, educational attainment and financial strain). 
+
+#SoL composite (higher score = lower SoL)
+
+# Code standard of living variable formed of the following categories:
+# Housing comp: house tenure & type (2 items); overcrowding (1 item); quality of structural materials (3 items); household commodities (4 items); 
+# Total electricals ownership (1 item); 
+# Access to means of transport (1 item)
+
+# HOUSING (9 items)
+
+
+# ELECTRICALS OWNERSHIP (1 item); 0 = none; 6 = all six options
+#var_label(df$el_count)
+#table(df$el_count, useNA = "ifany")
+df$rev_el_count <- 6-df$el_count 
+#table(df$rev_el_count, useNA = "ifany")
+
+# TRANSPORT; 0 = none avail; 1 = any avail
+#table(tr_any, useNA = "ifany")
+df$rev_tr_any <- ifelse(df$tr_any == 0, 1,
+                    ifelse(df$tr_any == 1, 0, NA))
+#table(df$rev_tr_any, useNA = "ifany")
+
+# COMPOSITE SOL SCORE (higher = lower SoL)
+
+df$miss_SoL<-apply(df[,c("tenure","hq1_housetype","hq2_roomsforsleep","hq3_floorqual","hq4_roofqual","hq5_wallqual","hq6_lighting","hq7_cookfuel","hq8_watersource","hq9_toilet", "rev_el_count","rev_tr_any")], MARGIN = 1, function(x) sum(is.na(x)))
+table(df$miss_SoL)
+
+df$SoL<-ifelse(df$miss_SoL > 1, NA, rowSums(df[,c("tenure","hq1_housetype","hq2_roomsforsleep","hq3_floorqual","hq4_roofqual","hq5_wallqual","hq6_lighting","hq7_cookfuel","hq8_watersource","hq9_toilet", "rev_el_count","rev_tr_any")], na.rm = TRUE))
+table(df$SoL, useNA = "ifany")
+
+# EDUCATION (recoded so higher score = lower)
+
+#val_labels(df$education)
+#table(df$education)
+df$education <- ifelse(df$education > 5, NA, df$education)
+df$rev_education <- 5-df$education
+#table(df$rev_education, useNA = "ifany")
+
+# FINANCIAL STRAIN
+
+#val_labels(df$finstrain)
+#table(df$finstrain, useNA = "ifany")
+
+# STANDARDISE SES SUB-SCALES
+
+df$stand_SoL <- as.vector(scale(df$SoL))
+
+df$stand_rev_education <- as.vector(scale(df$rev_education))
+
+df$stand_finstrain <-  as.vector(scale(df$finstrain))
+
+df$SES <- df$stand_SoL + df$stand_rev_education + df$stand_finstrain
+
+df$stand_SES <- as.vector(scale(df$SES)) #numeric data (continuous)
+
+df$stand_SoL <- as.numeric(df$stand_SoL) #numeric data (continuous)
+df$stand_rev_education<- as.numeric(df$stand_rev_education) #numeric data (continuous)
+df$stand_finstrain<- as.numeric(df$stand_finstrain) #numeric data (continuous)
+
+cvar <- df[,c("stand_SoL", "stand_rev_education", "stand_finstrain")]
+(corrs <- round(cor(cvar, use = "p"),2))
+```
+
+# Transforming Affected by War
+
+```{r}
+
+df$affected.war <- df$c1_war1+df$c1_war2+df$c1_war3+df$c1_war4+df$c1_war5+df$c1_war6+df$c1_war7+df$c1_war8
+
+#table(df$affected.war)
+
+df$affected.war.bin[df$affected.war == 8] <- "0"
+df$affected.war.bin[df$affected.war == 12] <- "1"
+df$affected.war.bin[df$affected.war == 16] <- "1"
+df$affected.war.bin[df$affected.war == 20] <- "1"
+df$affected.war.bin[df$affected.war == 24] <- "1"
+df$affected.war.bin[df$affected.war == 28] <- "1"
+
+affected.war.bin <- df$affected.war.bin
+
+table(affected.war.bin, useNA = "ifany") #logical data (binary ordinal)
+
+```
+
+# Transforming Affected by Tsunami
+
+```{r}
+df$affected.tsu <- tsu1 + tsu2 + tsu3 + tsu4 + tsu5 + tsu6 + tsu7 + tsu8 + tsu9
+
+#table(df$affected.tsu)
+
+df$affected.tsu.bin[df$affected.tsu == 9] <- "0"
+df$affected.tsu.bin[df$affected.tsu == 13] <- "1"
+df$affected.tsu.bin[df$affected.tsu == 17] <- "1"
+df$affected.tsu.bin[df$affected.tsu == 21] <- "1"
+df$affected.tsu.bin[df$affected.tsu == 25] <- "1"
+df$affected.tsu.bin[df$affected.tsu == 29] <- "1"
+df$affected.tsu.bin[df$affected.tsu == 33] <- "1"
+df$affected.tsu.bin[df$affected.tsu == 37] <- "1"
+
+affected.tsu.bin <- df$affected.tsu.bin
+
+table(affected.tsu.bin, useNA = "ifany") #logical data (binary ordinal)
+
+```
+
+# Transforming Interpers Violence
+
+```{r}
+
+df$interpers_viol <- df$sle35_robbed + df$sle40_weapon + df$sle18_physabuse + df$sle42_sexabuse + df$sle43_scold_work + df$sle44_bullied + df$sle45_enthdisc +df$sle56_scam
+
+df$interpers_viol <- as.numeric(df$interpers_viol)
+
+table(df$interpers_viol, useNA = "ifany") #numeric integer data (continuous)
+
+```
+
+# Risk Factors for Violence - Poisson Regression 
+
+```{r}
+
+# Poisson Regression = suitable for count data such as integer data, number of interpersonal violence experiences
+
+library(data.table)
+library(arsenal)
+library(lavaan)
+library(lmtest)
+
+Pois1 <- glm(formula = interpers_viol ~ sex, data = df, family=poisson)
+
+summary(Pois1)
+confint(Pois1)
+
+#extract the incidence rate ratio
+exp(coef(Pois1))
+#extract the confidence intervals
+exp(lmtest::coefci(Pois1))
+
+Pois2 <- glm(formula = interpers_viol ~ stand_SES, data = df, family=poisson)
+
+summary(Pois2)
+confint(Pois2)
+
+#extract the incidence rate ratio
+exp(coef(Pois2))
+#extract the confidence intervals
+exp(lmtest::coefci(Pois2))
+
+Pois3 <- glm(formula = interpers_viol ~ affected.tsu.bin, data = df, family=poisson)
+
+summary(Pois3)
+confint(Pois3)
+
+#extract the incidence rate ratio
+exp(coef(Pois3))
+#extract the confidence intervals
+exp(lmtest::coefci(Pois3))
+
+Pois4 <- glm(formula = interpers_viol ~ affected.war.bin, data = df, family=poisson)
+
+summary(Pois4)
+confint(Pois4)
+
+#extract the incidence rate ratio
+exp(coef(Pois4))
+#extract the confidence intervals
+exp(lmtest::coefci(Pois4))
+
+hist(df$age_yrs)
+
+Pois5 <- glm(formula = interpers_viol ~ age_yrs, data = df, family=poisson)
+
+summary(Pois5)
+confint(Pois5)
+
+#extract the incidence rate ratio
+exp(coef(Pois5))
+#extract the confidence intervals
+exp(lmtest::coefci(Pois5))
+
+#Sub-analysis in female participants
+
+table(df$sex_c1c2)
+femaledf <- subset(df, df$sex_c1c2 == 1)
+
+Pois6 <- glm(formula = interpers_viol ~ stand_SES, data = femaledf, family=poisson)
+
+summary(Pois6)
+confint(Pois6)
+
+#extract the incidence rate ratio
+exp(coef(Pois6))
+#extract the confidence intervals
+exp(lmtest::coefci(Pois6))
+
+Pois7 <- glm(formula = interpers_viol ~ affected.tsu.bin, data = femaledf, family=poisson)
+
+summary(Pois7)
+confint(Pois7)
+
+#extract the incidence rate ratio
+exp(coef(Pois7))
+#extract the confidence intervals
+exp(lmtest::coefci(Pois7))
+
+Pois8 <- glm(formula = interpers_viol ~ affected.war.bin, data = femaledf, family=poisson)
+
+summary(Pois8)
+confint(Pois8)
+
+#extract the incidence rate ratio
+exp(coef(Pois8))
+#extract the confidence intervals
+exp(lmtest::coefci(Pois8))
+
+Pois9 <- glm(formula = interpers_viol ~ age_yrs, data = femaledf, family=poisson)
+
+summary(Pois9)
+confint(Pois9)
+
+#extract the incidence rate ratio
+exp(coef(Pois9))
+#extract the confidence intervals
+exp(lmtest::coefci(Pois9))
+
+#Sub-analysis in male participants
+
+table(df$sex_c1c2)
+maledf <- subset(df, df$sex_c1c2 == 0)
+
+Pois10 <- glm(formula = interpers_viol ~ stand_SES, data = maledf, family=poisson)
+
+summary(Pois10)
+confint(Pois10)
+
+#extract the incidence rate ratio
+exp(coef(Pois10))
+#extract the confidence intervals
+exp(lmtest::coefci(Pois10))
+
+Pois11 <- glm(formula = interpers_viol ~ affected.tsu.bin, data = maledf, family=poisson)
+
+summary(Pois11)
+confint(Pois11)
+
+#extract the incidence rate ratio
+exp(coef(Pois11))
+#extract the confidence intervals
+exp(lmtest::coefci(Pois11))
+
+Pois12 <- glm(formula = interpers_viol ~ affected.war.bin, data = maledf, family=poisson)
+
+summary(Pois12)
+confint(Pois12)
+
+#extract the incidence rate ratio
+exp(coef(Pois12))
+#extract the confidence intervals
+exp(lmtest::coefci(Pois12))
+
+Pois13 <- glm(formula = interpers_viol ~ age_yrs, data = maledf, family=poisson)
+
+summary(Pois13)
+confint(Pois13)
+
+#extract the incidence rate ratio
+exp(coef(Pois13))
+#extract the confidence intervals
+exp(lmtest::coefci(Pois13))
+```
+
+# Risk Factors for Violence - Cluster Poisson Regressions 
+
+```{r}
+m1 <- miceadds::glm.cluster(data = df, formula = interpers_viol ~ sex, cluster = "clustervar", family = "poisson")
+
+summary(m1)
+
+m2 <- miceadds::glm.cluster(data = df, formula = interpers_viol ~ stand_SES, cluster = "clustervar", family = "poisson")
+
+summary(m2)
+
+m3 <- miceadds::glm.cluster(data = df, formula = interpers_viol ~ affected.tsu.bin, cluster = "clustervar", family = "poisson")
+
+summary(m3)
+
+m4 <- miceadds::glm.cluster(data = df, formula = interpers_viol ~ affected.war.bin, cluster = "clustervar", family = "poisson")
+
+summary(m4)
+
+m5 <- miceadds::glm.cluster(data = df, formula = interpers_viol ~ age_yrs, cluster = "clustervar", family = "poisson")
+
+summary(m5)
+
+#Sub-analysis in female participants
+
+m6 <- miceadds::glm.cluster(data = femaledf, formula = interpers_viol ~ stand_SES, cluster = "clustervar", family = "poisson")
+
+summary(m6)
+
+m7 <- miceadds::glm.cluster(data = femaledf, formula = interpers_viol ~ affected.tsu.bin, cluster = "clustervar", family = "poisson")
+
+summary(m7)
+
+m8 <- miceadds::glm.cluster(data = femaledf, formula = interpers_viol ~ affected.war.bin, cluster = "clustervar", family = "poisson")
+
+summary(m8)
+
+m9 <- miceadds::glm.cluster(data = femaledf, formula = interpers_viol ~ age_yrs, cluster = "clustervar", family = "poisson")
+
+summary(m9)
+
+#Sub-analysis in male participants
+
+m10 <- miceadds::glm.cluster(data = maledf, formula = interpers_viol ~ stand_SES, cluster = "clustervar", family = "poisson")
+
+summary(m10)
+
+m11 <- miceadds::glm.cluster(data = maledf, formula = interpers_viol ~ affected.tsu.bin, cluster = "clustervar", family = "poisson")
+
+summary(m11)
+
+m12 <- miceadds::glm.cluster(data = maledf, formula = interpers_viol ~ affected.war.bin, cluster = "clustervar", family = "poisson")
+
+summary(m12)
+
+m13 <- miceadds::glm.cluster(data = maledf, formula = interpers_viol ~ age_yrs, cluster = "clustervar", family = "poisson")
+
+summary(m13)
+
+```
+
+# Sex Diff in Means of IV scores
+```{r}
+table(df$sex_c1c2)
+
+femaledf <- subset(df, df$sex_c1c2 == 1)
+maledf <- subset(df, df$sex_c1c2 == 0)
+
+summary(femaledf$interpers_viol)
+summary(maledf$interpers_viol)
+```
+
+# Sex Diff in Each IV event
+```{r}
+
+# df$interpers_viol <- df$sle35_robbed + df$sle40_weapon + df$sle18_physabuse + df$sle42_sexabuse + df$sle43_scold_work + df$sle44_bullied + df$sle45_enthdisc +df$sle56_scam
+
+#ROBERY 
+
+table(df$sle35_robbed)
+prop.table(table(df$sle35_robbed))
+
+table(femaledf$sle35_robbed)
+prop.table(table(femaledf$sle35_robbed))
+
+table(maledf$sle35_robbed)
+prop.table(table(maledf$sle35_robbed))
+
+#WEAPON INJURY
+
+table(df$sle40_weapon)
+prop.table(table(df$sle40_weapon))
+
+table(femaledf$sle40_weapon)
+prop.table(table(femaledf$sle40_weapon))
+
+table(maledf$sle40_weapon)
+prop.table(table(maledf$sle40_weapon))
+
+#PHYSICAL ABUSE
+
+table(df$sle18_physabuse)
+prop.table(table(df$sle18_physabuse))
+
+table(femaledf$sle18_physabuse)
+prop.table(table(femaledf$sle18_physabuse))
+
+table(maledf$sle18_physabuse)
+prop.table(table(maledf$sle18_physabuse))
+
+#SEXUAL ABUSE
+
+table(df$sle42_sexabuse)
+prop.table(table(df$sle42_sexabuse))
+
+table(femaledf$sle42_sexabuse)
+prop.table(table(femaledf$sle42_sexabuse))
+
+table(maledf$sle42_sexabuse)
+prop.table(table(maledf$sle42_sexabuse))
+
+#SCOLDING AT WORK
+
+table(df$sle43_scold_work)
+prop.table(table(df$sle43_scold_work))
+
+table(femaledf$sle43_scold_work)
+prop.table(table(femaledf$sle43_scold_work))
+
+table(maledf$sle43_scold_work)
+prop.table(table(maledf$sle43_scold_work))
+
+#BULLYING
+
+table(df$sle44_bullied)
+prop.table(table(df$sle44_bullied))
+
+table(femaledf$sle44_bullied)
+prop.table(table(femaledf$sle44_bullied))
+
+table(maledf$sle44_bullied)
+prop.table(table(maledf$sle44_bullied))
+
+#ETHNIC DISC
+
+table(df$sle45_enthdisc)
+prop.table(table(df$sle45_enthdisc))
+
+table(femaledf$sle45_enthdisc)
+prop.table(table(femaledf$sle45_enthdisc))
+
+table(maledf$sle45_enthdisc)
+prop.table(table(maledf$sle45_enthdisc))
+
+#SCAMMED
+
+table(df$sle56_scam)
+prop.table(table(df$sle56_scam))
+
+table(femaledf$sle56_scam)
+prop.table(table(femaledf$sle56_scam))
+
+table(maledf$sle56_scam)
+prop.table(table(maledf$sle56_scam))
+
+#LOG REGRESSION 
+
+#robbery 
+
+logreg1 <- miceadds::glm.cluster(data = df, formula = df$sle35_robbed ~ sex, cluster = "clustervar", family = "binomial")
+
+summary(logreg1)
+confint(logreg1)
+exp(cbind("Odds ratio" = coef(logreg1), confint.default(logreg1, level = 0.95)))
+
+#weapon
+
+logreg2 <- miceadds::glm.cluster(data = df, formula = df$sle40_weapon ~ sex, cluster = "clustervar", family = "binomial")
+
+summary(logreg2)
+confint(logreg2)
+exp(cbind("Odds ratio" = coef(logreg2), confint.default(logreg2, level = 0.95)))
+
+#physical abuse 
+
+logreg3 <- miceadds::glm.cluster(data = df, formula = df$sle18_physabuse ~ sex, cluster = "clustervar", family = "binomial")
+
+summary(logreg3)
+confint(logreg3)
+exp(cbind("Odds ratio" = coef(logreg3), confint.default(logreg3, level = 0.95)))
+
+#sexual abuse 
+
+logreg4 <- miceadds::glm.cluster(data = df, formula = df$sle42_sexabuse ~ sex, cluster = "clustervar", family = "binomial")
+
+summary(logreg4)
+confint(logreg4)
+exp(cbind("Odds ratio" = coef(logreg4), confint.default(logreg4, level = 0.95)))
+
+#scoulded
+
+logreg5 <- miceadds::glm.cluster(data = df, formula = df$sle43_scold_work ~ sex, cluster = "clustervar", family = "binomial")
+
+summary(logreg5)
+confint(logreg5)
+exp(cbind("Odds ratio" = coef(logreg5), confint.default(logreg5, level = 0.95)))
+
+#bullying 
+
+logreg6 <- miceadds::glm.cluster(data = df, formula = df$sle44_bullied ~ sex, cluster = "clustervar", family = "binomial")
+
+summary(logreg6)
+confint(logreg6)
+exp(cbind("Odds ratio" = coef(logreg6), confint.default(logreg6, level = 0.95)))
+
+#ethnic discrimination
+
+logreg7 <- miceadds::glm.cluster(data = df, formula = df$sle45_enthdisc ~ sex, cluster = "clustervar", family = "binomial")
+
+summary(logreg7)
+confint(logreg7)
+exp(cbind("Odds ratio" = coef(logreg7), confint.default(logreg7, level = 0.95)))
+
+#scam 
+
+logreg8 <- miceadds::glm.cluster(data = df, formula = df$sle56_scam ~ sex, cluster = "clustervar", family = "binomial")
+
+summary(logreg8)
+confint(logreg8)
+exp(cbind("Odds ratio" = coef(logreg8), confint.default(logreg8, level = 0.95)))
+
+```
+
+# Risk Factors for Violence - Cluster Linear Regressions 
+
+```{r}
+lin1 <- miceadds::glm.cluster(data = df, formula = interpers_viol ~ sex, cluster = "clustervar")
+
+summary(lin1)
+confint(lin1)
+
+sum(!is.na(df$interpers_viol)&!is.na(df$sex_c1c2))
+sum(is.na(df$interpers_viol)&!is.na(df$sex_c1c2)) #39
+
+lin2 <- miceadds::glm.cluster(data = df, formula = interpers_viol ~ stand_SES, cluster = "clustervar")
+
+summary(lin2)
+confint(lin2)
+
+# Missing Data Amount
+sum(!is.na(df$interpers_viol)&!is.na(df$stand_SES))
+sum(!is.na(df$interpers_viol)&is.na(df$stand_SES)) #20
+sum(is.na(df$interpers_viol)&!is.na(df$stand_SES)) #6 = 26 total
+
+lin3 <- miceadds::glm.cluster(data = df, formula = interpers_viol ~ affected.tsu.bin, cluster = "clustervar")
+
+summary(lin3)
+confint(lin3)
+
+# Missing Data Amount
+sum(!is.na(df$interpers_viol)&!is.na(df$affected.tsu.bin))
+sum(!is.na(df$interpers_viol)&is.na(df$affected.tsu.bin)) #9
+sum(is.na(df$interpers_viol)&!is.na(df$affected.tsu.bin)) #39 total = 48
+
+lin4 <- miceadds::glm.cluster(data = df, formula = interpers_viol ~ affected.war.bin, cluster = "clustervar")
+
+summary(lin4)
+confint(lin4)
+
+# Missing Data Amount
+sum(!is.na(df$interpers_viol)&!is.na(df$affected.war.bin))
+sum(!is.na(df$interpers_viol)&is.na(df$affected.war.bin)) #6
+sum(is.na(df$interpers_viol)&!is.na(df$affected.war.bin)) #39 total = 45
+
+lin5 <- miceadds::glm.cluster(data = df, formula = interpers_viol ~ age_yrs, cluster = "clustervar")
+
+summary(lin5)
+confint(lin5)
+
+# Missing Data Amount
+sum(!is.na(df$interpers_viol)&!is.na(df$age_yrs))
+sum(!is.na(df$interpers_viol)&is.na(df$age_yrs)) #0
+sum(is.na(df$interpers_viol)&!is.na(df$age_yrs)) #6 total = 6
+
+#Sub-analysis in female participants
+
+lin6 <- miceadds::glm.cluster(data = femaledf, formula = interpers_viol ~ stand_SES, cluster = "clustervar")
+
+summary(lin6)
+confint(lin6)
+
+lin7 <- miceadds::glm.cluster(data = femaledf, formula = interpers_viol ~ affected.tsu.bin, cluster = "clustervar")
+
+summary(lin7)
+confint(lin7)
+
+lin8 <- miceadds::glm.cluster(data = femaledf, formula = interpers_viol ~ affected.war.bin, cluster = "clustervar")
+
+summary(lin8)
+confint(lin8)
+
+lin9 <- miceadds::glm.cluster(data = femaledf, formula = interpers_viol ~ age_yrs, cluster = "clustervar")
+
+summary(lin9)
+confint(lin9)
+
+#Sub-analysis in male participants
+
+lin10 <- miceadds::glm.cluster(data = maledf, formula = interpers_viol ~ stand_SES, cluster = "clustervar")
+
+summary(lin10)
+confint(lin10)
+
+lin11 <- miceadds::glm.cluster(data = maledf, formula = interpers_viol ~ affected.tsu.bin, cluster = "clustervar")
+
+summary(lin11)
+confint(lin11)
+
+lin12 <- miceadds::glm.cluster(data = maledf, formula = interpers_viol ~ affected.war.bin, cluster = "clustervar")
+
+summary(lin12)
+confint(lin12)
+
+lin13 <- miceadds::glm.cluster(data = maledf, formula = interpers_viol ~ age_yrs, cluster = "clustervar")
+
+summary(lin13)
+confint(lin13)
+
+```
+
+# IV by age
+
+```{r}
+
+df$age_cat <- ifelse(df$age_yrs > 18 & df$age_yrs < 30, 1,
+                     ifelse(df$age_yrs > 29 & df$age_yrs < 40, 2,
+                            ifelse(df$age_yrs > 39 & df$age_yrs < 50, 3,
+                                   ifelse(df$age_yrs > 49 & df$age_yrs < 60, 4,
+                                          ifelse(df$age_yrs > 59 & df$age_yrs < 70, 5,
+                                                 ifelse(df$age_yrs > 69, 6, NA))))))
+
+df$age_cat <- as.factor(df$age_cat)
+
+table(df$age_cat, df$interpers_viol)
+
+hist(df$interpers_viol)
+summary(df$age_cat)
+
+df %>%
+  group_by(age_cat) %>%
+  summarise_at(vars(interpers_viol), list(name = mean), na.rm=TRUE)
+
+```
+
+

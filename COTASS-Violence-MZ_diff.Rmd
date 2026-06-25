@@ -1,0 +1,304 @@
+---
+title: "COTASS Interpersonal Violence Project - Descriptive Statistics"
+author: "Filip Kaleta"
+date: "2023-12-06"
+output: 
+  html_document:
+    toc: true
+---
+
+# Packages:
+
+```{r include=FALSE}
+
+library(haven)
+#library(psych)
+require(psych)
+#library(ggplot2)
+#library(scales)
+#library(stringr)
+#library(dplyr)
+#library(tidyverse)
+#library(forcats)
+library(labelled)
+#library(car)
+#library(miceadds)
+#library(texreg)
+#library(sandwich)
+#library(broom)
+#library(knitr)
+#library(foreign)
+
+```
+
+# Data Frame Transformations:
+
+```{r include=FALSE}
+
+rm(list=ls())
+
+df <- read_dta("IPV-and-depression3.dta") #N = 5961
+
+df <- df[!(df$whichcotass == 1 | df$whichcotass == 2),] #Only keeping participants with COTASS 1 and COTASS 2 data (most vars and analyses are T2 anyway, so creates a lot of NA id we keep T1) N = 3876
+
+View(df)
+
+df$interpers_viol <- df$sle35_robbed + df$sle40_weapon + df$sle18_physabuse + df$sle42_sexabuse + df$sle43_scold_work + df$sle44_bullied + df$sle45_enthdisc +df$sle56_scam
+
+df$interpers_viol <- as.numeric(df$interpers_viol) 
+
+var_label(df$numtw_noDZOS)
+table(df$numtw_noDZOS, useNA = "ifany")
+
+dtw <- df[c("numclust", "c1c2_sexzyg", "numtw_noDZOS", "sing_or_twin", "sex_c1c2",  "age_yrs", "interpers_viol", "pbecktot", "e1", "depscreen", "beck_q9", "e20_i")]
+
+head(dtw)
+dtw<-data.frame(dtw) #### IB: I think this was the missing line of code to make it all work - the reshape function didn't like that the variables were stored with the labels (which is how the dataset was set up in STATA), so you need to create a new dataframe with the data.frame function. You can see the difference when comparing head(dtw) before and after
+head(dtw)
+
+## Need to recode numtw_noDZOS so that singletons are given put in 'twin 1'
+table(dtw$numtw_noDZOS, useNA = "ifany")
+table(dtw$sing_or_twin)
+
+dtw$TwNo <- ifelse(is.na(dtw$numtw_noDZOS), 1, 
+                           ifelse(dtw$numtw_noDZOS == 1, 1,
+                                  ifelse(dtw$numtw_noDZOS == 2, 2, 
+                                         ifelse(dtw$numtw_noDZOS == 3, 3, NA))))
+table(dtw$TwNo, useNA = "ifany")
+
+# Because we don't want triplets, remove lines in which TwNo==3; this removes the 3rd sibling in each triplet group
+table(dtw$c1c2_sexzyg, useNA = "ifany")
+which(is.na(dtw$c1c2_sexzyg))
+dtw <- dtw[!(dtw$c1c2_sexzyg == 7),]
+dtw <- dtw[!is.na(dtw$c1c2_sexzyg),]
+
+table(dtw$TwNo, useNA = "ifany")
+
+dim(dtw)
+summary(dtw)
+psych::describe(dtw)
+
+head(dtw)
+
+# Rename variables in sub data to make it easier. 
+names(dtw) <- c("FamID", "sexzyg", "noDZOS", "sing_or_twin", "sex", "age", "interpers_viol", "bdi_dep", "cidi_probe", "cidi_dep", "bdi_si", "cidi_ssh", "TwNo")
+head(dtw)
+```
+
+# Remove outliers, regress out covariates, transform, reshape (if necessary):
+
+```{r}
+#Depression
+
+#Transforming CIDI depression
+
+dtw$cidi_dep <- ifelse(dtw$cidi_dep < 1, 1, dtw$cidi_dep) #set diagnosis undetermined to NA
+
+dtw$cidi_dep[dtw$cidi_dep == 1] <- 0
+dtw$cidi_dep[dtw$cidi_dep == 5] <- 1
+
+table(dtw$cidi_dep) # only those who completed the full clinical interview, having passed the probe q; logical data (binary ordinal) 
+
+#Regress out sex and age CIDI DEP
+
+dtw$cidi_dep_resid <- residuals(lm(dtw$cidi_dep ~ dtw$sex + dtw$age, na.action="na.exclude"))
+sum(is.na(dtw$cidi_dep_resid)) #32
+hist(dtw$cidi_dep_resid)
+psych::describe(dtw$cidi_dep_resid)
+
+dtw$cidi_dep_resid <- as.numeric(dtw$cidi_dep_resid)
+
+#Transforming BDI SI to binary
+
+dtw$bdi_si_bin <- ifelse(dtw$bdi_si > 0, 1, dtw$bdi_si) #set all SI answers to binary SI
+
+#Regress out sex and age BDI SI
+
+dtw$bdi_si_bin_resid <- residuals(lm(dtw$bdi_si_bin ~ dtw$sex + dtw$age, na.action="na.exclude"))
+sum(is.na(dtw$bdi_si_bin_resid)) #34
+hist(dtw$bdi_si_bin_resid)
+psych::describe(dtw$bdi_si_bin_resid)
+
+dtw$bdi_si_bin_resid <- as.numeric(dtw$bdi_si_bin_resid)
+
+#Transforming SSH to include those who didn't pass depression screening from NA to 0 for suicidal self-harm
+
+val_labels(dtw$cidi_probe)
+
+dtw$cidi_ssh[dtw$cidi_ssh == 5] <- 1
+dtw$cidi_ssh[dtw$cidi_ssh == 1] <- 0
+dtw$cidi_ssh[df$cidi_probe == 1] <- 0 
+table(dtw$cidi_ssh) #### IB: NB! Check if this is working how you want it to? Only 75 cases with value 0 for this variable? 
+
+#Regress out sex and age SSH
+
+dtw$cidi_ssh_resid <- residuals(lm(dtw$cidi_ssh ~ dtw$sex + dtw$age, na.action="na.exclude"))
+sum(is.na(dtw$cidi_ssh_resid)) #34
+hist(dtw$cidi_ssh_resid)
+psych::describe(dtw$cidi_ssh_resid)
+
+dtw$cidi_ssh_resid <- as.numeric(dtw$cidi_ssh_resid)
+
+
+## BDI Depression Log Transformations
+
+sum(is.na(dtw$bdi_dep)) 
+hist(dtw$bdi_dep)
+psych::describe(dtw$bdi_dep)
+
+dtw$bdi_dep_resid <- residuals(lm(dtw$bdi_dep ~ dtw$sex + dtw$age, na.action="na.exclude"))
+sum(is.na(dtw$bdi_dep_resid)) 
+hist(dtw$bdi_dep_resid)
+psych::describe(dtw$bdi_dep_resid)
+
+# Log transformation
+
+dtw$bdi_depT <- log(dtw$bdi_dep_resid + 8)*2
+hist(dtw$bdi_depT)
+psych::describe(dtw$bdi_depT)
+
+dtw$bdi_depTS <- scale(dtw$bdi_depT)
+hist(dtw$bdi_depTS)
+psych::describe(dtw$bdi_depTS)
+sum(is.na(dtw$bdi_depTS)) #119
+
+# No logT 
+dtw$bdi_dep_rS <- scale(dtw$bdi_dep_resid)
+psych::describe(dtw$bdi_dep_rS)
+hist(dtw$bdi_dep_rS)
+
+```
+
+# Reshape data from long format to wide format for twin analysis:
+
+```{r include=FALSE}
+
+head(dtw)
+dtw 	<- reshape(dtw, idvar = c("FamID","sexzyg"), timevar = "TwNo", direction = "wide", sep = "")
+
+View(dtw)
+
+# Check data
+str(dtw)
+summary(dtw)
+psych::describe(dtw)
+
+```
+
+# MZ Twin Differences Analyses Using GEE:
+
+```{r}
+
+library(gee)
+
+#Sub data
+
+val_labels(dtw$sexzyg)
+
+dmz <- dtw[dtw$sexzyg == 1 | dtw$sexzyg == 3,]
+
+View(dmz)
+
+dmz$bdi_depTS1_NA <- !is.na(dmz$bdi_depTS1)
+dmz$bdi_depTS2_NA <- !is.na(dmz$bdi_depTS2)
+
+View(dmz$bdi_depTS1_NA)
+
+table(dmz$bdi_depTS1_NA, dmz$bdi_depTS2_NA)
+
+summary(!is.na(dmz$interpers_viol1) & !is.na(dmz$cidi_dep1))
+
+#GEE
+
+# Calculate CV family mean and twin difference scores for co-twin control analyses
+
+dmz$interpers_viol_mean <- rowMeans(dmz[,c("interpers_viol1", "interpers_viol2")]) #family mean (Bb)
+
+dmz$interpers_viol_diff1 <- dmz$interpers_viol1 - dmz$interpers_viol_mean #difference score for twin 1 (Bw)
+
+#BDI DEPRESSION
+
+summary(dmz$bdi_depTS1)
+
+# Run twin difference analysis
+gee_mz1 <- summary(gee(bdi_depTS1 ~ interpers_viol_mean + interpers_viol_diff1, data=dmz, id=FamID, corstr="exchangeable"))
+
+gee_mz1
+
+ # Extract MZ results - within-twin estimate (Bw)
+    # estimate
+    est_MZ1 <- gee_mz1$coefficients[3,1]
+    # low ci
+    low_CI_MZ1 <- gee_mz1$coefficients[3,1] - (1.96 * gee_mz1$coefficients[3,4])
+    # high ci
+    upp_CI_MZ1 <- gee_mz1$coefficients[3,1] + (1.96 * gee_mz1$coefficients[3,4])
+    
+est_MZ1
+low_CI_MZ1
+upp_CI_MZ1
+
+# Extract p value
+
+2 * (1 - pnorm(abs(3.45))) # z - 3.449
+
+#CIDI Depression  
+
+# Run twin difference analysis
+gee_mz2 <- summary(gee(cidi_dep1 ~ interpers_viol_mean + interpers_viol_diff1, data=dmz, id=FamID, corstr="exchangeable", family=binomial(link="probit")))
+
+gee_mz2
+
+ # Extract MZ results - within-twin estimate (Bw)
+    # estimate
+    est_MZ2 <- gee_mz2$coefficients[3,1]
+    # low ci
+    low_CI_MZ2 <- gee_mz2$coefficients[3,1] - (1.96 * gee_mz2$coefficients[3,4])
+    # high ci
+    upp_CI_MZ2 <- gee_mz2$coefficients[3,1] + (1.96 * gee_mz2$coefficients[3,4])
+    
+est_MZ2
+low_CI_MZ2
+upp_CI_MZ2
+
+# Extract p value
+
+2 * (1 - pnorm(abs(1.29))) # z - 1.287
+
+#BDI SI  
+
+# Run twin difference analysis
+gee_mz3 <- summary(gee(bdi_si_bin1 ~ interpers_viol_mean + interpers_viol_diff1, data=dmz, id=FamID, corstr="exchangeable", family=binomial(link="probit")))
+
+gee_mz3
+
+ # Extract MZ results - within-twin estimate (Bw)
+    # estimate
+    est_MZ3 <- gee_mz3$coefficients[3,1]
+    # low ci
+    low_CI_MZ3 <- gee_mz3$coefficients[3,1] - (1.96 * gee_mz3$coefficients[3,4])
+    # high ci
+    upp_CI_MZ3 <- gee_mz3$coefficients[3,1] + (1.96 * gee_mz3$coefficients[3,4])
+    
+est_MZ3
+low_CI_MZ3
+upp_CI_MZ3
+
+# Extract p value
+
+2 * (1 - pnorm(abs(1.44))) # z - 1.44
+
+# Prep data to obtained pooled effect sizes
+
+# Calculate variance
+
+# - calculate SEs from CIs (SE = (upper CI - lower CI) / 3.92) 
+bdi_dep_SE <- (upp_CI_MZ1 - low_CI_MZ1) / 3.92
+cidi_dep_SE <- (upp_CI_MZ2 - low_CI_MZ2) / 3.92
+bdi_si_bin_SE <- (upp_CI_MZ3 - low_CI_MZ3) / 3.92
+
+# - convert SEs to variance (variance = SE^2)
+bdi_dep_var <- bdi_dep_SE^2
+cidi_dep_var <- cidi_dep_SE^2
+bdi_si_bin_var <- bdi_si_bin_SE^2
+
+```
